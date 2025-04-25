@@ -1,6 +1,10 @@
+require('dotenv').config({ path: 'secret.env' });
 const express = require('express');
 const mysql = require('mysql2');
 const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const SECRET = process.env.JWT_SECRET;
 
 const app = express();
 const port = 3000;
@@ -14,6 +18,18 @@ const db = mysql.createConnection({
   database: 'testdb'
 });
 
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Token saknas' });
+
+  jwt.verify(token, SECRET, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Ogiltig token' });
+    req.user = user;
+    next();
+  });
+}
+
 db.connect(err => {
   if (err) {
     console.error('Database connection failed:', err);
@@ -22,13 +38,37 @@ db.connect(err => {
   }
 });
 
+app.post('/signup', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Användarnamn och lösenord krävs' });
+  }
+  db.query('SELECT * FROM users WHERE username = ?', [username], async (err, results) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    if (results.length > 0) {
+      return res.status(400).json({ error: 'Användarnamn finns redan' });
+    }
+        // Hasha lösenordet
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Spara användaren i databasen
+        db.query('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashedPassword], (err, result) => {
+          if (err) return res.status(500).json({ error: 'Database error' });
+    
+          res.status(201).json({ username });
+        });
+      });
+    });
 app.get('/', (req, res) => {
   res.send(`
-    <h1>API Documentation</h1>
+     <h1>API Dokumentation</h1>
     <ul>
-      <li>GET /items - Get all items</li>
-      <li>GET /items/:id - Get item by ID</li>
-      <li>POST /items - Create new item</li>
+      <li>GET /items - (skyddad) Hämta alla items</li>
+      <li>GET /items/:id - (skyddad) Hämta ett item via ID</li>
+      <li>POST /items - (skyddad) Skapa nytt item</li>
+      <li>PUT /items/:id - (skyddad) Uppdatera ett item via ID</li>
+      <li>POST /login - Logga in och få JWT-token</li>
     </ul>
   `);
 });
@@ -69,6 +109,19 @@ app.post('/items', (req, res) => {
     }
   });
 });
+
+app.put('/items/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Missing name field' });
+
+  db.query('UPDATE items SET name = ? WHERE id = ?', [name, id], (err, result) => {
+    if (err) return res.status(500).json({ error: 'Database error' });
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Item not found' });
+    res.json({ id, name });
+  });
+});
+
 
 app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
