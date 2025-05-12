@@ -60,6 +60,35 @@ app.post('/signup', async (req, res) => {
         });
       });
     });
+
+    app.post('/login', (req, res) => {
+      const { username, password } = req.body;
+    
+      if (!username || !password) {
+        return res.status(400).json({ error: 'Användarnamn och lösenord krävs' });
+      }
+    
+      db.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (results.length === 0) {
+          return res.status(404).json({ error: 'Användare inte hittad' });
+        }
+    
+        const user = results[0];
+    
+        // Kontrollera lösenord
+        bcrypt.compare(password, user.password, (err, match) => {
+          if (err) return res.status(500).json({ error: 'Error while checking password' });
+          if (!match) return res.status(401).json({ error: 'Fel lösenord' });
+    
+          // Skapa JWT-token
+          const token = jwt.sign({ username: user.username, id: user.id }, SECRET, { expiresIn: '1h' });
+    
+          res.json({ token });
+        });
+      });
+    });
+
 app.get('/', (req, res) => {
   res.send(`
      <h1>API Dokumentation</h1>
@@ -131,3 +160,78 @@ app.listen(port, () => {
 // curl -X POST http://localhost:3000/items -H "Content-Type: application/json" -d "{\"name\":\"Test2\"}"
 // curl -X GET http://localhost:3000/items
 // curl -X GET http://localhost:3000/items/1
+
+// 1. POST /login - Logga in och få JWT-token
+// För att logga in och få en JWT-token:
+// cURL:
+// curl -X POST http://localhost:3000/login -H "Content-Type: application/json" -d "{\"username\":\"your_username\",\"password\":\"your_password\"}"
+
+// Postman:
+// Välj POST som HTTP-metod.
+// URL: http://localhost:3000/login
+// Body: raw JSON format med användarnamn och lösenord:
+// {
+//   "username": "your_username",
+//   "password": "your_password"
+// }
+// Du får tillbaka en JWT-token om inloggningen lyckas.
+
+
+// 2. GET /items - Hämta alla items (skyddad)
+// För att hämta alla items med en skyddad route:
+// cURL:
+// curl -X GET http://localhost:3000/items -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+// Postman:
+// Välj GET som HTTP-metod.
+// URL: http://localhost:3000/items
+// Lägg till header:
+// Authorization: Bearer YOUR_JWT_TOKEN
+// Tryck på "Send" för att göra anropet.
+
+
+// 3. GET /items/:id - Hämta ett item via ID (skyddad)
+// För att hämta ett specifikt item via ID:
+// cURL:
+// curl -X GET http://localhost:3000/items/1 -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+// Postman:
+// Välj GET som HTTP-metod.
+// URL: http://localhost:3000/items/1 (byt ut 1 med det ID du vill hämta)
+// Lägg till header:
+// Authorization: Bearer YOUR_JWT_TOKEN
+// Tryck på "Send" för att hämta objektet.
+
+
+// 4. POST /items - Skapa ett nytt item (skyddad)
+// För att skapa ett nytt item:
+// cURL:
+// curl -X POST http://localhost:3000/items -H "Authorization: Bearer YOUR_JWT_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"New Item\"}"
+
+// Postman:
+// Välj POST som HTTP-metod.
+// URL: http://localhost:3000/items
+// Body: raw JSON format:
+// {
+//   "name": "New Item"
+// }
+// Lägg till header:
+// Authorization: Bearer YOUR_JWT_TOKEN
+// Tryck på "Send" för att skapa ett nytt item.
+
+
+// 5. PUT /items/:id - Uppdatera ett item via ID (skyddad)
+// För att uppdatera ett item baserat på ID:
+// cURL:
+// curl -X PUT http://localhost:3000/items/1 -H "Authorization: Bearer YOUR_JWT_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"Updated Item\"}"
+
+// Postman:
+// Välj PUT som HTTP-metod.
+// URL: http://localhost:3000/items/1 (byt ut 1 med det ID du vill uppdatera)
+// Body: raw JSON format:
+// {
+//   "name": "Updated Item"
+// }
+// Lägg till header:
+// Authorization: Bearer YOUR_JWT_TOKEN
+// Tryck på "Send" för att uppdatera objektet.
